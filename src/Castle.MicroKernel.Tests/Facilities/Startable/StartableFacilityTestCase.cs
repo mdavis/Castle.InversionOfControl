@@ -14,12 +14,14 @@
 
 namespace Castle.Facilities.Startable.Tests
 {
+	using System;
 	using System.Collections.Generic;
 
 	using Castle.Core;
 	using Castle.Core.Configuration;
 	using Castle.Facilities.Startable.Tests.Components;
 	using Castle.MicroKernel;
+	using Castle.MicroKernel.ModelBuilder;
 	using Castle.MicroKernel.Registration;
 
 	using NUnit.Framework;
@@ -157,6 +159,18 @@ namespace Castle.Facilities.Startable.Tests
 			startableCreatedBeforeResolved = true;
 		}
 
+		private void OnStartableComponentWithServiceDependencyStarted(ComponentModel mode, object instance)
+		{
+			if (instance is ServiceDependency) return;
+			StartableComponentWithServiceDependency startable = instance as StartableComponentWithServiceDependency;
+
+			Assert.IsNotNull(startable);
+			Assert.IsTrue(startable.Started);
+			Assert.IsFalse(startable.Stopped);
+
+			startableCreatedBeforeResolved = true;
+		}
+
 		/// <summary>
 		/// This test has one startable component dependent on another, and both are dependent
 		/// on a third generic component - all are singletons. We need to make sure we only get
@@ -189,6 +203,48 @@ namespace Castle.Facilities.Startable.Tests
 			Assert.AreEqual(1, StartableChainDependency.startcount);
 			Assert.AreEqual(1, StartableChainDependency.createcount);
 			Assert.AreEqual(1, StartableChainGeneric<string>.createcount);
+		}
+
+		private class ServiceDependencyComponentInspector : IContributeComponentModelConstruction
+		{
+			#region Implementation of IContributeComponentModelConstruction
+
+			public void ProcessModel(IKernel kernel, ComponentModel model)
+			{
+				if (model.Implementation == typeof(StartableComponentWithServiceDependency))
+				{
+					model.Dependencies.Add(new DependencyModel(DependencyType.Service, null, typeof(ServiceDependency), false));
+				}
+			}
+
+			#endregion
+		}
+
+		[Test]
+		public void TestStartableComponentWithServiceDependency()
+		{
+			IKernel kernel = new DefaultKernel();
+			kernel.ComponentModelBuilder.AddContributor(new ServiceDependencyComponentInspector());
+			kernel.ComponentCreated += new ComponentInstanceDelegate(OnStartableComponentWithServiceDependencyStarted);
+
+			kernel.AddFacility("startable", new StartableFacility());
+
+			kernel.Register(Component.For<StartableComponentWithServiceDependency>());
+
+			Assert.IsFalse(startableCreatedBeforeResolved, "Component was started before dependency was registered");
+
+			kernel.Register(Component.For<ServiceDependency>());
+
+			Assert.IsTrue(startableCreatedBeforeResolved, "Component was not properly started");
+
+			StartableComponentWithServiceDependency component = kernel.Resolve<StartableComponentWithServiceDependency>();
+
+			Assert.IsNotNull(component);
+			Assert.IsTrue(component.Started);
+			Assert.IsFalse(component.Stopped);
+
+			kernel.ReleaseComponent(component);
+			Assert.IsTrue(component.Stopped);
 		}
 	}
 }

@@ -861,7 +861,11 @@ namespace Castle.MicroKernel.Handlers
 
 		protected void SetNewState(HandlerState newState)
 		{
-			state = newState;
+			if (state != newState)
+			{
+				state = newState;
+				RaiseHandlerStateChanged();
+			}
 		}
 
 		protected IDictionary<Type,DependencyModel> DependenciesByService
